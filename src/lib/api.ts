@@ -1,23 +1,75 @@
-import type { Transaction } from '../types';
+import type { Settings, Transaction } from '../types';
 
-const API_BASE = '/api';
-
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? 'Request failed');
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+export interface AppState {
+  transactions: Transaction[];
+  settings: Settings;
 }
 
-export async function checkApiHealth(): Promise<boolean> {
+interface HealthResponse {
+  ok: boolean;
+  authRequired: boolean;
+}
+
+const ACCESS_KEY_STORAGE_KEY = 'mf_access_key';
+
+function getAccessKey(): string | null {
+  return sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY);
+}
+
+function setAccessKey(value: string): void {
+  sessionStorage.setItem(ACCESS_KEY_STORAGE_KEY, value);
+}
+
+function accessKeyHeaders(): HeadersInit {
+  const key = getAccessKey();
+  return key ? { 'X-Flow-Access-Key': key } : {};
+}
+
+async function promptForAccessKey(): Promise<string | null> {
+  const key = window.prompt('Enter your Flow access key');
+  if (!key) return null;
+  setAccessKey(key);
+  return key;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...accessKeyHeaders(),
+      ...init?.headers,
+    },
+    ...init,
+  });
+
+  if (res.status === 401) {
+    const key = await promptForAccessKey();
+    if (key) {
+      return request<T>(path, init);
+    }
+  }
+
+  if (!res.ok) {
+    const message = await res.text();
+    throw new Error(message || `Request failed: ${res.status}`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export async function canReachApi(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 1200);
+    const res = await fetch('/api/health', { signal: controller.signal });
+    window.clearTimeout(timeout);
+    if (res.ok) {
+      const health = (await res.json()) as HealthResponse;
+      if (health.authRequired && !getAccessKey()) {
+        await promptForAccessKey();
+      }
+    }
     return res.ok;
   } catch {
     return false;
@@ -25,11 +77,10 @@ export async function checkApiHealth(): Promise<boolean> {
 }
 
 export const api = {
-  getTransactions: () => request<Transaction[]>('/transactions'),
-  addTransaction: (tx: Transaction) =>
-    request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(tx) }),
-  updateTransaction: (tx: Transaction) =>
-    request<Transaction>(`/transactions/${tx.id}`, { method: 'PUT', body: JSON.stringify(tx) }),
-  deleteTransaction: (id: string) =>
-    request<void>(`/transactions/${id}`, { method: 'DELETE' }),
+  loadState: () => request<AppState>('/state'),
+  saveState: (state: AppState) =>
+    request<AppState>('/state', {
+      method: 'PUT',
+      body: JSON.stringify(state),
+    }),
 };

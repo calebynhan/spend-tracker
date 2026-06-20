@@ -1,4 +1,3 @@
-import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -10,11 +9,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Flow — Money Tracker',
+        name: 'Flow',
         short_name: 'Flow',
-        description: 'Track where your money comes from and where it goes',
-        theme_color: '#000000',
-        background_color: '#000000',
+        description: 'Personal money-flow tracker',
+        theme_color: '#f6f2ea',
+        background_color: '#f6f2ea',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
@@ -40,11 +39,6 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
-    },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
     },
   },
 });

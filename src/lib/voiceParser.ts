@@ -1,88 +1,163 @@
-import type { Category, FlowDirection } from '../types';
-import { categorize } from './categorize';
+import type { Direction, Transaction } from '../types';
+import { IN_CATEGORIES, OUT_CATEGORIES } from '../types';
 
-export interface ParsedVoiceInput {
-  description?: string;
+export interface ParsedVoice {
   amount?: number;
-  direction?: FlowDirection;
-  reason?: string;
-  person?: string;
-  date?: string;
+  dir?: Direction;
+  category?: string;
+  who?: string;
+  why?: string;
 }
 
-const AMOUNT_RE = /\$?\s*(\d+(?:\.\d{1,2})?)\s*(?:dollars?)?/i;
-const DATE_RE =
-  /(?:on\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)|(?:on\s+)?(today|yesterday)|(?:on\s+)?(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})/i;
+const NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
+  thousand: 1000,
+};
 
-const IN_KEYWORDS = /\b(received|got|deposit|income|paid me|sent me|from)\b/i;
-const OUT_KEYWORDS = /\b(spent|paid|sent|bought|transfer(?:red)? to|invested)\b/i;
-
-const PERSON_RE = /(?:to|from)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/;
-const REASON_RE = /(?:for|because|reason)\s+(.+?)(?:\s+on\s+|\s*$)/i;
-
-export function parseVoiceInput(text: string): ParsedVoiceInput {
-  const result: ParsedVoiceInput = {};
+function parseSpelledAmount(text: string): number | undefined {
   const lower = text.toLowerCase();
+  const match = lower.match(
+    /(\w+(?:\s+\w+)*)\s+(?:dollars?|bucks?)/,
+  );
+  if (!match) return undefined;
 
-  const amountMatch = text.match(AMOUNT_RE);
-  if (amountMatch) {
-    result.amount = parseFloat(amountMatch[1]);
-  }
+  const words = match[1].split(/\s+/);
+  let total = 0;
+  let current = 0;
 
-  if (IN_KEYWORDS.test(lower) && !OUT_KEYWORDS.test(lower)) {
-    result.direction = 'in';
-  } else if (OUT_KEYWORDS.test(lower)) {
-    result.direction = 'out';
-  }
-
-  const personMatch = text.match(PERSON_RE);
-  if (personMatch) {
-    result.person = personMatch[1];
-  }
-
-  const reasonMatch = text.match(REASON_RE);
-  if (reasonMatch) {
-    result.reason = reasonMatch[1].trim();
-  }
-
-  const dateMatch = text.match(DATE_RE);
-  if (dateMatch) {
-    if (dateMatch[2] === 'today') {
-      result.date = new Date().toISOString().slice(0, 10);
-    } else if (dateMatch[2] === 'yesterday') {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      result.date = d.toISOString().slice(0, 10);
-    } else if (dateMatch[1]) {
-      const parts = dateMatch[1].split('/');
-      const month = parts[0].padStart(2, '0');
-      const day = parts[1].padStart(2, '0');
-      const year = parts[2] ? (parts[2].length === 2 ? `20${parts[2]}` : parts[2]) : '2026';
-      result.date = `${year}-${month}-${day}`;
+  for (const word of words) {
+    const val = NUMBER_WORDS[word];
+    if (val === undefined) return undefined;
+    if (val === 100 || val === 1000) {
+      current = (current || 1) * val;
+    } else {
+      current += val;
+    }
+    if (val < 100) {
+      total += current;
+      current = 0;
     }
   }
+  total += current;
+  return total > 0 ? total : undefined;
+}
 
-  // Extract description: remove parsed parts, keep merchant-like words
-  let desc = text
-    .replace(AMOUNT_RE, '')
-    .replace(DATE_RE, '')
-    .replace(PERSON_RE, '')
-    .replace(REASON_RE, '')
-  .replace(/\b(received|got|spent|paid|sent|bought|for|because|on|today|yesterday|dollars?)\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+function parseNumericAmount(text: string): number | undefined {
+  const match = text.match(/[\d,]+(?:\.\d{1,2})?/);
+  if (!match) return undefined;
+  const num = parseFloat(match[0].replace(/,/g, ''));
+  return isNaN(num) ? undefined : num;
+}
 
-  if (desc.length > 1) {
-    result.description = desc.charAt(0).toUpperCase() + desc.slice(1);
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function parseVoiceInput(text: string): ParsedVoice {
+  const lower = text.toLowerCase();
+  const result: ParsedVoice = { dir: 'out' };
+
+  result.amount = parseNumericAmount(text) ?? parseSpelledAmount(text);
+
+  if (
+    /\b(got|received|deposit|paycheck|earned|refund|income|salary|paid me)\b/.test(lower)
+  ) {
+    result.dir = 'in';
   }
+
+  if (/\b(invest|brokerage|stock|401|roth|ira)\b/.test(lower)) {
+    result.category = 'Investing';
+    result.dir = 'out';
+  } else if (
+    /\b(rent|grocer|bill|gas|food|utilit|insurance|necessit|phone)\b/.test(lower)
+  ) {
+    result.category = 'Necessity';
+    result.dir = 'out';
+  } else if (
+    /\b(sent|gave|gift)\b/.test(lower) &&
+    /\bto\s+([a-z]+(?:\s+[a-z]+)?)/i.test(text)
+  ) {
+    result.category = 'Sent to people';
+    result.dir = 'out';
+  } else if (/\b(fun|concert|movie|game|dinner|drinks|trip|show|coffee)\b/.test(lower)) {
+    result.category = 'Fun';
+    result.dir = 'out';
+  } else if (result.dir === 'in') {
+    if (/\b(back|split|owe|venmo)\b/.test(lower)) {
+      result.category = 'Repayment';
+    } else {
+      result.category = 'Income';
+    }
+  } else {
+    result.category = 'Other';
+  }
+
+  const toMatch = text.match(/\bto\s+([a-z]+(?:\s+[a-z]+)?)/i);
+  const fromMatch = text.match(/\bfrom\s+([a-z]+(?:\s+[a-z]+)?)/i);
+  if (toMatch) result.who = titleCase(toMatch[1]);
+  else if (fromMatch) result.who = titleCase(fromMatch[1]);
+
+  const forMatch = text.match(/\bfor\s+(.+?)(?:\s+on\s+|\s+via\s+|$)/i);
+  if (forMatch) result.why = forMatch[1].trim();
 
   return result;
 }
 
-export function suggestCategory(
-  description: string,
-  amount: number,
-  direction: FlowDirection,
-): Category {
-  return categorize({ description, amount, direction });
+export function buildTitle(
+  dir: Direction,
+  category: string,
+  who: string,
+): string {
+  if (dir === 'in') {
+    return who ? `${who}` : 'Money in';
+  }
+  if (category === 'Sent to people' && who) {
+    return `Sent to ${who}`;
+  }
+  return who || category;
+}
+
+export function categoriesForDirection(dir: Direction): string[] {
+  return dir === 'in' ? [...IN_CATEGORIES] : [...OUT_CATEGORIES];
+}
+
+export function transactionToForm(tx: Transaction) {
+  return {
+    dir: tx.dir,
+    amount: String(tx.amount),
+    category: tx.category,
+    who: tx.who,
+    why: tx.why,
+    date: tx.date,
+    method: tx.method,
+    editingId: tx.id,
+  };
 }

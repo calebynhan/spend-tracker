@@ -1,113 +1,164 @@
-import type { Category, Transaction } from '../types';
-import { CATEGORY_META } from '../types';
+import type { FeedFilter, Settings, Transaction } from '../types';
+import { OUT_CATEGORIES } from '../types';
 
-export interface CategorySummary {
-  category: Category;
-  total: number;
-  count: number;
-  label: string;
+export function sortByDateDesc(transactions: Transaction[]): Transaction[] {
+  return [...transactions].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+}
+
+export function filterFeed(transactions: Transaction[], filter: FeedFilter): Transaction[] {
+  if (filter === 'all') return transactions;
+  return transactions.filter((t) => t.dir === filter);
+}
+
+export function totalIn(transactions: Transaction[]): number {
+  return transactions.filter((t) => t.dir === 'in').reduce((s, t) => s + t.amount, 0);
+}
+
+export function totalOut(transactions: Transaction[]): number {
+  return transactions.filter((t) => t.dir === 'out').reduce((s, t) => s + t.amount, 0);
+}
+
+export function balance(transactions: Transaction[], settings: Settings): number {
+  return settings.openingBalance + totalIn(transactions) - totalOut(transactions);
+}
+
+export interface AllocationItem {
+  category: string;
+  amount: number;
+  percent: number;
   color: string;
-  icon: string;
 }
 
-export interface DashboardStats {
-  totalIn: number;
-  totalOut: number;
-  net: number;
-  investing: number;
-  necessity: number;
-  fun: number;
-  peerOut: number;
-  peerIn: number;
-  income: number;
-  subscriptions: number;
-  byCategory: CategorySummary[];
-  peerOutReasons: { reason: string; amount: number; person?: string }[];
-}
+export function outAllocation(
+  transactions: Transaction[],
+  colors: Record<string, string>,
+): AllocationItem[] {
+  const outTxns = transactions.filter((t) => t.dir === 'out');
+  const total = outTxns.reduce((s, t) => s + t.amount, 0);
+  if (total === 0) return [];
 
-const SPENDING_CATEGORIES: Category[] = [
-  'investing',
-  'necessity',
-  'fun',
-  'peer_out',
-  'subscription',
-  'credit_card',
-];
-
-export function computeStats(transactions: Transaction[]): DashboardStats {
-  let totalIn = 0;
-  let totalOut = 0;
-  const categoryTotals = new Map<Category, { total: number; count: number }>();
-  const peerOutReasons: { reason: string; amount: number; person?: string }[] = [];
-
-  for (const t of transactions) {
-    if (t.category === 'internal_transfer') continue;
-
-    if (t.direction === 'in') {
-      totalIn += t.amount;
-    } else {
-      totalOut += t.amount;
-    }
-
-    const existing = categoryTotals.get(t.category) ?? { total: 0, count: 0 };
-    existing.total += t.amount;
-    existing.count += 1;
-    categoryTotals.set(t.category, existing);
-
-    if (t.category === 'peer_out') {
-      peerOutReasons.push({
-        reason: t.reason ?? 'No reason specified',
-        amount: t.amount,
-        person: t.person,
-      });
-    }
+  const byCat = new Map<string, number>();
+  for (const t of outTxns) {
+    byCat.set(t.category, (byCat.get(t.category) ?? 0) + t.amount);
   }
 
-  const byCategory: CategorySummary[] = Array.from(categoryTotals.entries())
-    .map(([category, { total, count }]) => ({
-      category,
-      total,
-      count,
-      label: CATEGORY_META[category].label,
-      color: CATEGORY_META[category].color,
-      icon: CATEGORY_META[category].icon,
-    }))
-    .sort((a, b) => b.total - a.total);
-
-  const sum = (cat: Category) => categoryTotals.get(cat)?.total ?? 0;
-
-  return {
-    totalIn,
-    totalOut,
-    net: totalIn - totalOut,
-    investing: sum('investing'),
-    necessity: sum('necessity'),
-    fun: sum('fun'),
-    peerOut: sum('peer_out'),
-    peerIn: sum('peer_in'),
-    income: sum('income'),
-    subscriptions: sum('subscription'),
-    byCategory,
-    peerOutReasons,
-  };
+  return OUT_CATEGORIES.filter((c) => byCat.has(c))
+    .map((category) => {
+      const amount = byCat.get(category) ?? 0;
+      return {
+        category,
+        amount,
+        percent: Math.round((amount / total) * 100),
+        color: colors[category] ?? '#9a8f78',
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
 }
 
-export function filterTransactions(
+export interface BucketSummary {
+  category: string;
+  amount: number;
+  count: number;
+  percent: number;
+  color: string;
+}
+
+export function bucketSummaries(
   transactions: Transaction[],
-  query: string,
-  categoryFilter: Category | 'all',
+  colors: Record<string, string>,
+): BucketSummary[] {
+  const outTxns = transactions.filter((t) => t.dir === 'out');
+  const total = outTxns.reduce((s, t) => s + t.amount, 0);
+
+  const byCat = new Map<string, { amount: number; count: number }>();
+  for (const t of outTxns) {
+    const cur = byCat.get(t.category) ?? { amount: 0, count: 0 };
+    cur.amount += t.amount;
+    cur.count += 1;
+    byCat.set(t.category, cur);
+  }
+
+  return OUT_CATEGORIES.filter((c) => byCat.has(c))
+    .map((category) => {
+      const { amount, count } = byCat.get(category)!;
+      return {
+        category,
+        amount,
+        count,
+        percent: total > 0 ? Math.round((amount / total) * 100) : 0,
+        color: colors[category] ?? '#9a8f78',
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+}
+
+export interface ReasonPill {
+  why: string;
+  amount: number;
+}
+
+export function reasonPillsForCategory(
+  transactions: Transaction[],
+  category: string,
+): ReasonPill[] {
+  const txns = transactions.filter((t) => t.dir === 'out' && t.category === category);
+  const byWhy = new Map<string, number>();
+  for (const t of txns) {
+    const key = t.why || 'No reason';
+    byWhy.set(key, (byWhy.get(key) ?? 0) + t.amount);
+  }
+  return Array.from(byWhy.entries())
+    .map(([why, amount]) => ({ why, amount }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+export function transactionsForCategory(
+  transactions: Transaction[],
+  category: string,
 ): Transaction[] {
-  const q = query.toLowerCase().trim();
-  return transactions.filter((t) => {
-    if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
-    if (!q) return true;
-    return (
-      t.description.toLowerCase().includes(q) ||
-      t.reason?.toLowerCase().includes(q) ||
-      t.person?.toLowerCase().includes(q) ||
-      t.source?.toLowerCase().includes(q)
-    );
+  return sortByDateDesc(
+    transactions.filter((t) => t.dir === 'out' && t.category === category),
+  );
+}
+
+export function formatMoney(amount: number, showCents: boolean): string {
+  if (showCents) {
+    return amount.toLocaleString('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+    });
+  }
+  return `$${Math.round(amount).toLocaleString('en-US')}`;
+}
+
+export function formatSignedAmount(
+  amount: number,
+  dir: 'in' | 'out',
+  showCents: boolean,
+): string {
+  const prefix = dir === 'in' ? '+' : '−';
+  if (showCents) {
+    return `${prefix}${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `${prefix}$${Math.round(amount).toLocaleString('en-US')}`;
+}
+
+export function formatLongDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
-export { SPENDING_CATEGORIES };
+export function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+export function currentMonthLabel(): string {
+  return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}

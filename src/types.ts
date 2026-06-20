@@ -1,126 +1,80 @@
-export type FlowDirection = 'in' | 'out';
+export type Direction = 'in' | 'out';
 
-export type Category =
-  | 'income'
-  | 'investing'
-  | 'peer_in'
-  | 'peer_out'
-  | 'necessity'
-  | 'fun'
-  | 'subscription'
-  | 'credit_card'
-  | 'internal_transfer'
-  | 'refund'
-  | 'other';
-
-export type Account = 'checking_6174' | 'savings_7033';
+export type OutCategory = 'Investing' | 'Necessity' | 'Sent to people' | 'Fun' | 'Other';
+export type InCategory = 'Income' | 'Repayment' | 'Other';
+export type Category = OutCategory | InCategory;
 
 export interface Transaction {
-  id: string;
-  date: string;
-  description: string;
+  id: number;
+  dir: Direction;
   amount: number;
-  direction: FlowDirection;
-  account: Account;
-  category: Category;
-  source?: string;
-  reason?: string;
-  method?: string;
-  person?: string;
-  notes?: string;
+  category: string;
+  title: string;
+  who: string;
+  why: string;
+  date: string;
+  method: string;
 }
 
-export interface CategoryMeta {
-  id: Category;
-  label: string;
-  color: string;
-  icon: string;
-  description: string;
+export type Screen =
+  | 'flow'
+  | 'activity'
+  | 'add'
+  | 'buckets'
+  | 'trends'
+  | 'category-detail'
+  | 'transaction-detail';
+
+export type FeedFilter = 'all' | 'in' | 'out';
+
+export interface Settings {
+  openingBalance: number;
+  showCents: boolean;
 }
 
-export const CATEGORY_META: Record<Category, CategoryMeta> = {
-  income: {
-    id: 'income',
-    label: 'Income',
-    color: '#30d158',
-    icon: '💰',
-    description: 'Payroll, interest, deposits',
-  },
-  investing: {
-    id: 'investing',
-    label: 'Investing',
-    color: '#0a84ff',
-    icon: '📈',
-    description: 'Transfers to brokerage accounts',
-  },
-  peer_in: {
-    id: 'peer_in',
-    label: 'Received from People',
-    color: '#30d158',
-    icon: '👋',
-    description: 'Venmo, Zelle received',
-  },
-  peer_out: {
-    id: 'peer_out',
-    label: 'Sent to People',
-    color: '#bf5af2',
-    icon: '🤝',
-    description: 'Money sent to friends & family',
-  },
-  necessity: {
-    id: 'necessity',
-    label: 'Necessities',
-    color: '#ff9f0a',
-    icon: '🏠',
-    description: 'Transport, essentials',
-  },
-  fun: {
-    id: 'fun',
-    label: 'Fun',
-    color: '#ff375f',
-    icon: '🎉',
-    description: 'Dining, rides, entertainment',
-  },
-  subscription: {
-    id: 'subscription',
-    label: 'Subscriptions',
-    color: '#64d2ff',
-    icon: '🔄',
-    description: 'Recurring services',
-  },
-  credit_card: {
-    id: 'credit_card',
-    label: 'Credit Card Payments',
-    color: '#8e8e93',
-    icon: '💳',
-    description: 'Paying off credit card bills',
-  },
-  internal_transfer: {
-    id: 'internal_transfer',
-    label: 'Internal Transfers',
-    color: '#636366',
-    icon: '↔️',
-    description: 'Between your own accounts',
-  },
-  refund: {
-    id: 'refund',
-    label: 'Refunds',
-    color: '#30d158',
-    icon: '↩️',
-    description: 'Money returned to you',
-  },
-  other: {
-    id: 'other',
-    label: 'Other',
-    color: '#8e8e93',
-    icon: '📋',
-    description: 'Uncategorized',
-  },
+export interface AddFormState {
+  dir: Direction;
+  amount: string;
+  category: string;
+  who: string;
+  why: string;
+  date: string;
+  method: string;
+  editingId: number | null;
+}
+
+export const OUT_CATEGORIES: OutCategory[] = [
+  'Investing',
+  'Necessity',
+  'Sent to people',
+  'Fun',
+  'Other',
+];
+
+export const IN_CATEGORIES: InCategory[] = ['Income', 'Repayment', 'Other'];
+
+export const CATEGORY_COLORS: Record<string, string> = {
+  Investing: '#23201a',
+  Necessity: '#9c7b45',
+  'Sent to people': '#b8a98c',
+  Fun: '#d8cdb8',
+  Income: '#6f7d4f',
+  Repayment: '#a9b487',
+  Other: '#9a8f78',
 };
 
-export const ACCOUNT_LABELS: Record<Account, string> = {
-  checking_6174: 'Checking · 6174',
-  savings_7033: 'Savings · 7033',
+export const DEFAULT_SETTINGS: Settings = {
+  openingBalance: 7880,
+  showCents: false,
 };
 
-export type Tab = 'dashboard' | 'activity' | 'add';
+export const DEFAULT_ADD_FORM: AddFormState = {
+  dir: 'out',
+  amount: '',
+  category: 'Necessity',
+  who: '',
+  why: '',
+  date: new Date().toISOString().slice(0, 10),
+  method: '',
+  editingId: null,
+};

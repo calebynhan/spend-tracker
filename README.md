@@ -1,74 +1,99 @@
 # Flow — Money Tracker
 
-A free, local-first full-stack app that tracks where your money comes from and where it goes. No bank connection, no LLM, no cloud costs.
+A personal money-flow tracker with a refined "private bank" aesthetic. It works as a PWA, looks good on phone and desktop, and now includes a local backend for durable storage.
 
-## Architecture
+## Stack
 
-| Layer | Tech | Purpose |
-|-------|------|---------|
-| Frontend | React + Vite + PWA | Mobile UI, voice input, offline cache |
-| Backend | Express + SQLite | REST API, persistent storage |
-| Storage | `data/flow.db` | Local SQLite database (free) |
+- **Vite + React + TypeScript** — installable PWA
+- **Express** — local backend API
+- **JSON file store** — persisted at `data/store.json`
+- **localStorage fallback** — browser cache when backend is unavailable
+- **Web Speech API** — voice input, no LLM or paid APIs
 
-The frontend auto-detects the API. When the server is running, data syncs to SQLite. When offline, it falls back to IndexedDB in your browser.
-
-## Features
-
-- **Money flow tracking** — what, when, how, and why for every transaction
-- **Dashboard** — totals for investing, necessities, fun, peer transfers (with reasons)
-- **Voice input** — free Web Speech API, no AI cost ("Spent 33 dollars on Uber yesterday")
-- **Auto-categorization** — rule-based from merchant names
-- **PWA** — install on iPhone/Android home screen
-- **Pre-loaded data** — all SoFi transactions from April–June 2026 seeded on first launch
-
-## Quick start
+## Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-- Frontend: http://localhost:5173 (or your LAN IP for phone testing)
-- API: http://localhost:3001/api
+Open http://localhost:5173 (use your LAN IP on phone). The API runs at http://localhost:3001 and Vite proxies `/api`.
 
-### Production (single server)
+By default, the backend binds to `127.0.0.1` only. That keeps your financial data private on your computer.
+
+### Secure phone access on your Wi-Fi
+
+To use the app from your phone while your computer hosts the backend:
+
+1. Create a local env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Set `HOST=0.0.0.0`, set `FLOW_ACCESS_KEY` to a long random value, and include both your computer LAN origins:
+
+```bash
+HOST=0.0.0.0
+FLOW_ACCESS_KEY=<your-long-random-key>
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://192.168.1.25:5173,http://192.168.1.25:3001
+```
+
+Replace `192.168.1.25` with your computer's Wi-Fi IP address. When the phone opens the app, it will ask for the access key once per browser session.
+
+### Production-style local run
 
 ```bash
 npm run preview
 ```
 
-Builds the frontend and serves everything from port 3001.
+This builds the PWA and serves it from the Express backend.
 
 ### Install on phone
 
-1. Run `npm run preview` or deploy to your home network
-2. Open `http://<your-computer-ip>:3001` in Safari/Chrome
-3. Share → "Add to Home Screen"
+1. Open in Safari (iOS) or Chrome (Android)
+2. Share → **Add to Home Screen**
+
+## Screens
+
+| Tab | Screen |
+|-----|--------|
+| Flow | Balance, in/out split, allocation bar, recent 3 |
+| Activity | Full feed with All/In/Out filters |
+| + (FAB) | Add transaction with voice or form |
+| Buckets | Out-category cards with share bars |
+| Trends | Placeholder |
+
+Detail screens: category drill-down (reason pills), transaction detail (edit/delete).
+
+## Voice examples
+
+- "Spent two hundred dollars sent to Mom for birthday gift"
+- "Received fifty from Sam for dinner split"
+- "Invested eight hundred to Fidelity for monthly investing"
+
+## Reset data
+
+Clear localStorage keys `mf_txns`, `mf_settings`, `mf_seeded` in browser devtools and delete `data/store.json` to re-seed everything.
 
 ## API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/transactions` | List all transactions |
-| POST | `/api/transactions` | Create transaction |
-| PUT | `/api/transactions/:id` | Update transaction |
-| DELETE | `/api/transactions/:id` | Delete transaction |
-| GET | `/api/stats` | Aggregate stats |
+- `GET /api/health`
+- `GET /api/state`
+- `PUT /api/state`
+- `GET /api/transactions`
+- `POST /api/transactions`
+- `PUT /api/transactions/:id`
+- `DELETE /api/transactions/:id`
+- `GET /api/settings`
+- `PUT /api/settings`
 
-## Categories
+## Security Defaults
 
-| Category | What it tracks |
-|----------|----------------|
-| Income | Payroll, interest, deposits |
-| Investing | Schwab, Fidelity transfers |
-| Received from People | Venmo/Zelle in |
-| Sent to People | Zelle/Venmo out (with reasons) |
-| Necessities | Transit, essentials |
-| Fun | Uber, dining, entertainment |
-| Subscriptions | Google One, Adobe |
-| Credit Card | Discover bill payments |
-
-## Adding new transactions
-
-Use the **Add** tab — voice or quick form. Category auto-detects from the merchant name. Tap any transaction in Activity to edit the reason, person, or category.
+- Backend listens on `127.0.0.1` unless you explicitly set `HOST`.
+- Binding to a non-localhost host requires `FLOW_ACCESS_KEY`.
+- CORS is restricted to `ALLOWED_ORIGINS`.
+- API requests with a configured access key must send `X-Flow-Access-Key`.
+- Request bodies are limited to `100kb`.
+- Transactions, settings, and full-state updates are validated before writing `data/store.json`.
+- Static production responses include basic security headers and a CSP.
